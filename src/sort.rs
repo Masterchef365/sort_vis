@@ -169,12 +169,13 @@ where
 }
 
 /// Sorts a slice using insertion sort, which is *O*(*n*^2) worst-case.
-fn insertion_sort<T, F>(v: &mut [T], is_less: &mut F)
+fn insertion_sort<T, F>(v: &mut [T], is_less: &mut F, on_change: &mut impl FnMut(&[T]))
 where
     F: FnMut(&T, &T) -> bool,
 {
     for i in 1..v.len() {
         shift_tail(&mut v[..i + 1], is_less);
+        on_change(v);
     }
 }
 
@@ -718,7 +719,7 @@ where
 ///
 /// `limit` is the number of allowed imbalanced partitions before switching to `heapsort`. If zero,
 /// this function will immediately switch to heapsort.
-fn recurse<'a, T, F>(mut v: &'a mut [T], is_less: &mut F, mut pred: Option<&'a T>, mut limit: u32)
+fn recurse<'a, T, F>(mut v: &'a mut [T], is_less: &mut F, mut pred: Option<&'a T>, mut limit: u32, on_change: &mut impl FnMut(&[T]))
 where
     F: FnMut(&T, &T) -> bool,
 {
@@ -735,7 +736,7 @@ where
 
         // Very short slices get sorted using insertion sort.
         if len <= MAX_INSERTION {
-            insertion_sort(v, is_less);
+            insertion_sort(v, is_less, on_change);
             return;
         }
 
@@ -793,18 +794,18 @@ where
         // calls and consume less stack space. Then just continue with the longer side (this is
         // akin to tail recursion).
         if left.len() < right.len() {
-            recurse(left, is_less, pred, limit);
+            recurse(left, is_less, pred, limit, on_change);
             v = right;
             pred = Some(pivot);
         } else {
-            recurse(right, is_less, Some(pivot), limit);
+            recurse(right, is_less, Some(pivot), limit, on_change);
             v = left;
         }
     }
 }
 
 /// Sorts `v` using pattern-defeating quicksort, which is *O*(*n* \* log(*n*)) worst-case.
-pub fn quicksort<T, F>(v: &mut [T], mut is_less: F)
+pub fn quicksort<T, F>(v: &mut [T], mut is_less: F, mut on_change: impl FnMut(&[T]))
 where
     F: FnMut(&T, &T) -> bool,
 {
@@ -816,7 +817,7 @@ where
     // Limit the number of imbalanced partitions to `floor(log2(len)) + 1`.
     let limit = usize::BITS - v.len().leading_zeros();
 
-    recurse(v, &mut is_less, None, limit);
+    recurse(v, &mut is_less, None, limit, &mut on_change);
 }
 
 fn partition_at_index_loop<'a, T, F>(
@@ -831,7 +832,7 @@ fn partition_at_index_loop<'a, T, F>(
         // For slices of up to this length it's probably faster to simply sort them.
         const MAX_INSERTION: usize = 10;
         if v.len() <= MAX_INSERTION {
-            insertion_sort(v, is_less);
+            insertion_sort(v, is_less, &mut |_| ());
             return;
         }
 
