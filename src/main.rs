@@ -8,7 +8,6 @@ fn main() {
     let output_dir = PathBuf::from("images");
 
     let mut array = (0..width)
-        .map(|x| x * height / width)
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<i32>>();
@@ -44,6 +43,8 @@ fn draw_array(height: usize, frame: &[i32]) -> Vec<u8> {
 
     for y in 0..height {
         for &elem in frame {
+            let elem = elem * height as i32 / frame.len() as i32;
+
             if elem > y as i32 {
                 image.push(0xff);
                 image.push(0);
