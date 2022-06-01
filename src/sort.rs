@@ -123,7 +123,7 @@ where
 ///
 /// Returns `true` if the slice is sorted at the end. This function is *O*(*n*) worst-case.
 #[cold]
-fn partial_insertion_sort<T, F>(v: &mut [T], is_less: &mut F) -> bool
+fn partial_insertion_sort<T, F>(v: &mut [T], is_less: &mut F, on_change: &mut impl FnMut(&[T])) -> bool
 where
     F: FnMut(&T, &T) -> bool,
 {
@@ -158,10 +158,15 @@ where
         // Swap the found pair of elements. This puts them in correct order.
         v.swap(i - 1, i);
 
+        on_change(v);
+
         // Shift the smaller element to the left.
         shift_tail(&mut v[..i], is_less);
+        on_change(v);
+
         // Shift the greater element to the right.
         shift_head(&mut v[i..], is_less);
+        on_change(v);
     }
 
     // Didn't manage to sort the slice in the limited number of steps.
@@ -182,7 +187,7 @@ where
 /// Sorts `v` using heapsort, which guarantees *O*(*n* \* log(*n*)) worst-case.
 #[cold]
 // #[unstable(feature = "sort_internals", reason = "internal to sort module", issue = "none")]
-pub fn heapsort<T, F>(v: &mut [T], mut is_less: F)
+pub fn heapsort<T, F>(v: &mut [T], mut is_less: F, on_change: &mut impl FnMut(&[T]))
 where
     F: FnMut(&T, &T) -> bool,
 {
@@ -202,8 +207,13 @@ where
                 break;
             }
 
+            on_change(v);
+
             // Swap `node` with the greater child, move one step down, and continue sifting.
             v.swap(node, greater);
+
+            on_change(v);
+
             node = greater;
         }
     };
@@ -229,7 +239,7 @@ where
 /// This idea is presented in the [BlockQuicksort][pdf] paper.
 ///
 /// [pdf]: https://drops.dagstuhl.de/opus/volltexte/2016/6389/pdf/LIPIcs-ESA-2016-38.pdf
-fn partition_in_blocks<T, F>(v: &mut [T], pivot: &T, is_less: &mut F) -> usize
+fn partition_in_blocks<T, F>(v: &mut [T], pivot: &T, is_less: &mut F, on_change: &mut impl FnMut(&[T])) -> usize
 where
     F: FnMut(&T, &T) -> bool,
 {
@@ -406,6 +416,8 @@ where
                 start_l = start_l.offset(1);
                 start_r = start_r.offset(1);
             }
+
+            on_change(v);
         }
 
         if start_l == end_l {
@@ -458,6 +470,8 @@ where
                 ptr::swap(l.offset(*end_l as isize), r.offset(-1));
                 r = r.offset(-1);
             }
+
+            on_change(v);
         }
         width(v.as_mut_ptr(), r)
     } else if start_r < end_r {
@@ -471,6 +485,8 @@ where
                 ptr::swap(l, r.offset(-(*end_r as isize) - 1));
                 l = l.offset(1);
             }
+
+            on_change(v);
         }
         width(v.as_mut_ptr(), l)
     } else {
@@ -486,13 +502,14 @@ where
 ///
 /// 1. Number of elements smaller than `v[pivot]`.
 /// 2. True if `v` was already partitioned.
-fn partition<T, F>(v: &mut [T], pivot: usize, is_less: &mut F) -> (usize, bool)
+fn partition<T, F>(v: &mut [T], pivot: usize, is_less: &mut F, on_change: &mut impl FnMut(&[T])) -> (usize, bool)
 where
     F: FnMut(&T, &T) -> bool,
 {
     let (mid, was_partitioned) = {
         // Place the pivot at the beginning of slice.
         v.swap(0, pivot);
+        on_change(v);
         let (pivot, v) = v.split_at_mut(1);
         let pivot = &mut pivot[0];
 
@@ -524,7 +541,7 @@ where
             }
         }
 
-        (l + partition_in_blocks(&mut v[l..r], pivot, is_less), l >= r)
+        (l + partition_in_blocks(&mut v[l..r], pivot, is_less, on_change), l >= r)
 
         // `_pivot_guard` goes out of scope and writes the pivot (which is a stack-allocated
         // variable) back into the slice where it originally was. This step is critical in ensuring
@@ -534,6 +551,8 @@ where
     // Place the pivot between the two partitions.
     v.swap(0, mid);
 
+    on_change(v);
+
     (mid, was_partitioned)
 }
 
@@ -541,7 +560,7 @@ where
 ///
 /// Returns the number of elements equal to the pivot. It is assumed that `v` does not contain
 /// elements smaller than the pivot.
-fn partition_equal<T, F>(v: &mut [T], pivot: usize, is_less: &mut F) -> usize
+fn partition_equal<T, F>(v: &mut [T], pivot: usize, is_less: &mut F, on_change: &mut impl FnMut(&[T])) -> usize
 where
     F: FnMut(&T, &T) -> bool,
 {
@@ -585,6 +604,8 @@ where
             r -= 1;
             let ptr = v.as_mut_ptr();
             ptr::swap(ptr.add(l), ptr.add(r));
+
+            on_change(v);
             l += 1;
         }
     }
@@ -599,7 +620,7 @@ where
 /// Scatters some elements around in an attempt to break patterns that might cause imbalanced
 /// partitions in quicksort.
 #[cold]
-fn break_patterns<T>(v: &mut [T]) {
+fn break_patterns<T>(v: &mut [T], on_change: &mut impl FnMut(&[T])) {
     let len = v.len();
     if len >= 8 {
         // Pseudorandom number generator from the "Xorshift RNGs" paper by George Marsaglia.
@@ -637,6 +658,8 @@ fn break_patterns<T>(v: &mut [T]) {
             }
 
             v.swap(pos - 1 + i, other);
+
+            on_change(v);
         }
     }
 }
@@ -743,14 +766,14 @@ where
         // If too many bad pivot choices were made, simply fall back to heapsort in order to
         // guarantee `O(n * log(n))` worst-case.
         if limit == 0 {
-            heapsort(v, is_less);
+            heapsort(v, is_less, on_change);
             return;
         }
 
         // If the last partitioning was imbalanced, try breaking patterns in the slice by shuffling
         // some elements around. Hopefully we'll choose a better pivot this time.
         if !was_balanced {
-            break_patterns(v);
+            break_patterns(v, on_change);
             limit -= 1;
         }
 
@@ -762,7 +785,7 @@ where
         if was_balanced && was_partitioned && likely_sorted {
             // Try identifying several out-of-order elements and shifting them to correct
             // positions. If the slice ends up being completely sorted, we're done.
-            if partial_insertion_sort(v, is_less) {
+            if partial_insertion_sort(v, is_less, on_change) {
                 return;
             }
         }
@@ -772,7 +795,7 @@ where
         // This case is usually hit when the slice contains many duplicate elements.
         if let Some(p) = pred {
             if !is_less(p, &v[pivot]) {
-                let mid = partition_equal(v, pivot, is_less);
+                let mid = partition_equal(v, pivot, is_less, on_change);
 
                 // Continue sorting elements greater than the pivot.
                 v = &mut v[mid..];
@@ -781,7 +804,7 @@ where
         }
 
         // Partition the slice.
-        let (mid, was_p) = partition(v, pivot, is_less);
+        let (mid, was_p) = partition(v, pivot, is_less, on_change);
         was_balanced = cmp::min(mid, len - mid) >= len / 8;
         was_partitioned = was_p;
 
@@ -825,6 +848,7 @@ fn partition_at_index_loop<'a, T, F>(
     mut index: usize,
     is_less: &mut F,
     mut pred: Option<&'a T>,
+    on_change: &mut impl FnMut(&[T]),
 ) where
     F: FnMut(&T, &T) -> bool,
 {
@@ -844,7 +868,7 @@ fn partition_at_index_loop<'a, T, F>(
         // This case is usually hit when the slice contains many duplicate elements.
         if let Some(p) = pred {
             if !is_less(p, &v[pivot]) {
-                let mid = partition_equal(v, pivot, is_less);
+                let mid = partition_equal(v, pivot, is_less, on_change);
 
                 // If we've passed our index, then we're good.
                 if mid > index {
@@ -859,7 +883,7 @@ fn partition_at_index_loop<'a, T, F>(
             }
         }
 
-        let (mid, _) = partition(v, pivot, is_less);
+        let (mid, _) = partition(v, pivot, is_less, on_change);
 
         // Split the slice into `left`, `pivot`, and `right`.
         let (left, right) = v.split_at_mut(mid);
@@ -916,7 +940,7 @@ where
             .unwrap();
         v.swap(min_index, index);
     } else {
-        partition_at_index_loop(v, index, &mut is_less, None);
+        partition_at_index_loop(v, index, &mut is_less, None, &mut |_| todo!());
     }
 
     let (left, right) = v.split_at_mut(index);
