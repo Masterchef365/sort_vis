@@ -1,4 +1,4 @@
-use std::{collections::HashSet, path::{Path, PathBuf}, fs::File, io::{BufWriter, Write}};
+use std::{collections::HashSet, path::{Path, PathBuf}, fs::File, io::Write};
 
 mod sort;
 
@@ -15,19 +15,26 @@ fn main() {
 
     let mut frames = vec![array.clone()];
 
-    let record_frame = |array: &[i32]| {
-        if array != frames.last().unwrap() {
-            frames.push(array.to_vec());
+    let full_array_ptr = array.as_ptr();
+
+    let record_frame = |view: &[i32]| {
+        let last = frames.last().unwrap();
+        if view != last {
+            let off = unsafe { view.as_ptr().offset_from(full_array_ptr) };
+            let off = off as usize;
+            let mut frame = last.to_vec();
+
+            frame[off..][..view.len()].copy_from_slice(view);
+
+            frames.push(frame);
         }
     };
 
-    sort::quicksort(&mut array, |a, b| a < b, record_frame);
+    sort::quicksort(&mut array, |a, b| a > b, record_frame);
 
     for (idx, frame) in frames.into_iter().enumerate() {
-        dbg!(frame.len());
         let path = output_dir.join(format!("{}.ppm", idx));
         let data = draw_array(height as usize, &frame);
-        dbg!(data.len());
         write_ppm(path, &data, frame.len() as _).unwrap();
     }
 }
@@ -65,8 +72,7 @@ pub fn write_ppm(path: impl AsRef<Path>, data: &[u8], width: usize) -> std::io::
     );
     let height = n_pixels / width;
 
-    let file = File::create(path)?;
-    let mut file = BufWriter::new(file);
+    let mut file = File::create(path)?;
 
     writeln!(file, "P6")?;
     writeln!(file, "{} {}", width, height)?;
