@@ -33,7 +33,7 @@ fn main() {
     sort::quicksort(&mut array, |a, b| a > b, record_frame);
 
     for (idx, frame) in frames.into_iter().enumerate() {
-        let path = output_dir.join(format!("{}.ppm", idx));
+        let path = output_dir.join(format!("{:04}.ppm", idx));
         let data = draw_array(height as usize, &frame);
         write_ppm(path, &data, frame.len() as _).unwrap();
     }
