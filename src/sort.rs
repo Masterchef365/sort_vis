@@ -843,6 +843,7 @@ where
     recurse(v, &mut is_less, None, limit, &mut on_change);
 }
 
+/*
 fn partition_at_index_loop<'a, T, F>(
     mut v: &'a mut [T],
     mut index: usize,
@@ -948,3 +949,4 @@ where
     let pivot = &mut pivot[0];
     (left, pivot, right)
 }
+*/

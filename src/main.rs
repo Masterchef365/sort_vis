@@ -47,12 +47,9 @@ fn draw_array(height: usize, frame: &[i32]) -> Vec<u8> {
 
             // https://www.flagcolorcodes.com/pride-rainbow
             let colors = [
-                [209, 34, 41],
-                [246, 138, 30],
-                [253, 224, 26],
-                [0, 121, 64],
-                [36, 64, 142],
-                [115, 41, 130],
+                [214, 2, 112],
+                [155, 79, 150],
+                [0, 56, 168],
             ];
 
             let j = colors.len() * (y as i32 + elem) as usize / height;
