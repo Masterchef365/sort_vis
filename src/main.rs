@@ -45,15 +45,20 @@ fn draw_array(height: usize, frame: &[i32]) -> Vec<u8> {
         for &elem in frame {
             let elem = elem * height as i32 / frame.len() as i32;
 
-            if elem > y as i32 {
-                image.push(0xff);
-                image.push(0);
-                image.push(0);
-            } else {
-                image.push(0);
-                image.push(0);
-                image.push(0);
-            }
+            // https://www.flagcolorcodes.com/pride-rainbow
+            let colors = [
+                [209, 34, 41],
+                [246, 138, 30],
+                [253, 224, 26],
+                [0, 121, 64],
+                [36, 64, 142],
+                [115, 41, 130],
+            ];
+
+            let j = colors.len() * (y as i32 + elem) as usize / height;
+            let j = j % colors.len();
+
+            image.extend_from_slice(&colors[j]);
         }
     }
 
